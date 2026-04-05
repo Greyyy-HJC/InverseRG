@@ -33,17 +33,17 @@ The project has two linked goals:
   - y-direction: `Theta_y(i,j) = regularize(theta_y(2i,2j) + theta_y(2i,2j+1))`
 - This preserves gauge covariance because the sum of link phases along a path equals the phase of the product of link variables.
 
-### Gauge-Covariant Path Blocking (future)
-- Enumerate a small local path family for each coarse-link direction.
-- Compute the path holonomy for each candidate path.
-- Combine paths with learnable weights.
-- Project the weighted sum back to U(1).
-- The learned blocker operates over path families so gauge covariance is preserved by construction.
+### Gauge-Covariant Path Blocking (implemented)
+- Enumerate all 7 non-backtracking paths (up to 4 links) per coarse-link direction within transverse offset <= 1.
+- Compute the path holonomy (sum of link phases) for each candidate path.
+- Combine paths via circular (vector) average with softmax weights.
+- Weights predicted per-site by a CNN from gauge-invariant features (plaquette + rectangle cosines).
+- Gauge covariance is preserved by construction: path holonomies transform covariantly, weights depend only on gauge-invariant inputs.
 
 ## Coarse Action Model
 - The coarse action should remain local.
 - Start with the pure Wilson plaquette action at `beta_c = beta_f / 4`.
-- Future: generalized Wilson basis with plaquette `1x1`, rectangles `2x1` and `1x2`, and larger loops only if needed.
+- Generalized Wilson basis: plaquette `1x1`, rectangles `2x1` and `1x2` (implemented as `LocalWilsonLoopAction`).
 
 ## Coupling Baseline
 - Working hypothesis for 2D U(1): `beta_c = beta_f / 4` under `2x2` blocking.
@@ -59,7 +59,7 @@ At minimum, the project should track:
 
 ## Project Phases
 
-### Phase 0: Naive Pipeline (current)
+### Phase 0: Naive Pipeline (complete)
 Validate the full pipeline without neural networks:
 1. HMC for fine 2D U(1) ensembles (L=32, beta=4.0, 1000 configs)
 2. Naive 2x2 blocking to produce coarse ensembles (L=16)
@@ -67,11 +67,15 @@ Validate the full pipeline without neural networks:
 4. Distribution-level comparison of blocked-fine vs coarse-HMC ensembles
 5. Presentation notebook with HMC diagnostics, blocking visualization, and ensemble comparison
 
-### Phase 1: Learned Blocking and Coarse Action
-- Learnable path-weight blocker (gauge-covariant path families)
-- Generalized local coarse action (plaquette + rectangles)
-- Training loop with MMD + contrastive loss
+### Phase 1: Learned Blocking and Coarse Action (current)
+- 7-path gauge-covariant path family per direction (all non-backtracking paths within |transverse| <= 1)
+- `SpatialGaugeCovariantBlocker`: CNN predicts per-site path combination weights from 12-channel gauge-invariant features (plaquette + rectangle cosines)
+- `LocalWilsonLoopAction` with plaquette + rectangle basis for the coarse action
+- Training loop with MMD + contrastive + mean-mismatch loss
+- Train/test split for evaluation (configurable via `n_test_samples`)
+- Blocker type selection via `blocker_type` config: `"spatial"`, `"global"`, `"fixed"`
 - Compare against Phase 0 naive baseline
+- Presentation notebook: `presentation/phase1-learned-blocking.ipynb`
 
 ### Phase 2: Scaling and Validation
 - Larger lattices and multiple beta values
@@ -82,11 +86,12 @@ Validate the full pipeline without neural networks:
 - `inverserg/hmc.py` -- HMC sampler with Omelyan integrator and diagnostics
 - `inverserg/lattice.py` -- geometric helpers for loops, topology, regularization
 - `inverserg/measurements.py` -- observable extraction and theoretical references
-- `inverserg/blocking.py` -- naive blocker and gauge-covariant path blockers
+- `inverserg/blocking.py` -- naive blocker, 7-path family, NN gauge-covariant blockers
 - `inverserg/actions.py` -- local Wilson-loop coarse actions
 - `inverserg/baselines.py` -- tree-level coupling relations
 - `inverserg/diagnostics.py` -- KS tests, distribution plots, reports
-- `presentation/phase0-naive-pipeline.ipynb` -- Phase 0 human-facing progress presentation
+- `presentation/phase0-naive-pipeline.ipynb` -- Phase 0 naive pipeline presentation
+- `presentation/phase1-learned-blocking.ipynb` -- Phase 1 learned blocking presentation
 
 ## Acceptance Criteria
 - HMC runs with stable acceptance and reasonable Hamiltonian conservation.

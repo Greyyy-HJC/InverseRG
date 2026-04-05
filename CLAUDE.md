@@ -4,7 +4,7 @@ Project conventions for AI coding agents (Claude, Codex, etc.) working on Invers
 
 ## Project Overview
 2D compact U(1) lattice gauge theory with inverse renormalization group.
-Currently in Phase 0: naive pipeline without neural networks.
+Currently in Phase 1: learned gauge-covariant blocking with neural networks.
 
 ## Key Conventions
 
@@ -17,6 +17,10 @@ Currently in Phase 0: naive pipeline without neural networks.
 
 ### Blocking
 - Naive 2x2 blocking: sum two consecutive link phases along same direction, then regularize
+- Gauge-covariant path blocking: 7 non-backtracking paths per direction within |transverse| <= 1
+- Path combination via circular (vector) average with softmax weights
+- Blocker types: `NaiveBlocker`, `FixedGaugeCovariantBlocker`, `LearnableGaugeCovariantBlocker`, `SpatialGaugeCovariantBlocker`
+- `SpatialGaugeCovariantBlocker`: CNN predicts per-site path logits from gauge-invariant features (12 channels: plaquette + rectangle cosines)
 - Coarse lattice is `L/2` from fine lattice `L`
 - Tree-level coupling: `beta_c = beta_f / 4` for 2D
 
@@ -37,15 +41,16 @@ inverserg/
   hmc.py          -- HMC sampler (Omelyan integrator, diagnostics)
   lattice.py      -- loop geometry, regularization, topology
   measurements.py -- observable extraction, theoretical references
-  blocking.py     -- naive and gauge-covariant blockers
+  blocking.py     -- naive and gauge-covariant blockers (7-path family, NN blocker)
   actions.py      -- local Wilson-loop coarse actions
   baselines.py    -- tree-level coupling relations
   diagnostics.py  -- KS tests, distribution plots
-  training.py     -- learned RG training (Phase 1)
+  training.py     -- learned RG training (Phase 1: train/test split, blocker_type config)
 examples/         -- runnable scripts
 tests/            -- pytest tests
 presentation/     -- human-facing progress presentations (one notebook per phase)
-  phase0-naive-pipeline.ipynb -- Phase 0 naive pipeline presentation
+  phase0-naive-pipeline.ipynb  -- Phase 0 naive pipeline presentation
+  phase1-learned-blocking.ipynb -- Phase 1 learned blocking presentation
 ```
 
 ## Virtual Environment

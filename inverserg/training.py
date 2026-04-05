@@ -7,7 +7,11 @@ from torch import nn
 
 from .actions import LocalWilsonLoopAction
 from .baselines import tree_level_coarse_beta
-from .blocking import FixedGaugeCovariantBlocker, LearnableGaugeCovariantBlocker
+from .blocking import (
+    FixedGaugeCovariantBlocker,
+    LearnableGaugeCovariantBlocker,
+    SpatialGaugeCovariantBlocker,
+)
 from .hmc import HMCU1Sampler
 from .lattice import plaquette_angles, rectangle_x_angles, rectangle_y_angles, topological_charge, wilson_loop_angles
 
@@ -42,6 +46,10 @@ class RGTrainingConfig:
         "topological_charge",
     )
     mmd_bandwidth: float = 0.5
+    blocker_type: str = "spatial"
+    n_test_samples: int = 0
+    spatial_hidden_dim: int = 32
+    spatial_kernel_size: int = 3
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -65,10 +73,16 @@ class RGTrainingResult:
     blocker_summary: dict
     learned_action_coefficients: dict[str, float]
     final_distribution_metrics: dict[str, dict[str, float]] = field(default_factory=dict)
+    test_distribution_metrics: dict[str, dict[str, float]] = field(default_factory=dict)
     history: list[dict[str, float]] = field(default_factory=list)
+    final_blocked_ensemble: torch.Tensor | None = None
+    final_model_ensemble: torch.Tensor | None = None
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d.pop("final_blocked_ensemble", None)
+        d.pop("final_model_ensemble", None)
+        return d
 
     def save_json(self, path: str | Path) -> Path:
         path = Path(path)
@@ -87,8 +101,22 @@ def _observables_dict(basis: tuple[str, ...], tensor: torch.Tensor) -> dict[str,
     return {name: float(value.detach().cpu()) for name, value in zip(basis, tensor)}
 
 
-def generate_fine_ensemble(config: RGTrainingConfig) -> torch.Tensor:
-    _set_seed(config.seed)
+def _create_blocker(config: RGTrainingConfig) -> nn.Module:
+    if config.blocker_type == "spatial":
+        return SpatialGaugeCovariantBlocker(
+            hidden_dim=config.spatial_hidden_dim,
+            kernel_size=config.spatial_kernel_size,
+        )
+    if config.blocker_type == "global":
+        return LearnableGaugeCovariantBlocker()
+    if config.blocker_type == "fixed":
+        return FixedGaugeCovariantBlocker()
+    raise ValueError(f"Unknown blocker_type: {config.blocker_type!r}")
+
+
+def generate_fine_ensemble(config: RGTrainingConfig, n_samples: int | None = None,
+                           seed: int | None = None) -> torch.Tensor:
+    _set_seed(seed if seed is not None else config.seed)
     action = LocalWilsonLoopAction.wilson(config.fine_beta, basis=config.basis).to(config.device)
     sampler = HMCU1Sampler(
         lattice_size=config.fine_lattice_size,
@@ -98,7 +126,7 @@ def generate_fine_ensemble(config: RGTrainingConfig) -> torch.Tensor:
         device=config.device,
     )
     samples, _, _ = sampler.sample(
-        n_samples=config.n_fine_samples,
+        n_samples=n_samples if n_samples is not None else config.n_fine_samples,
         burn_in=config.sampler_burn_in,
         thin=config.sampler_thin,
     )
@@ -236,8 +264,14 @@ def train_learned_rg(
     fine_configs = fine_configs.to(device)
     coarse_lattice_size = fine_configs.shape[-1] // 2
 
+    test_configs: torch.Tensor | None = None
+    if config.n_test_samples > 0:
+        test_configs = generate_fine_ensemble(
+            config, n_samples=config.n_test_samples, seed=config.seed + 1000,
+        ).to(device)
+
     fixed_blocker = FixedGaugeCovariantBlocker().to(device)
-    learnable_blocker = (blocker if blocker is not None else LearnableGaugeCovariantBlocker()).to(device)
+    learnable_blocker = (blocker if blocker is not None else _create_blocker(config)).to(device)
     coarse_action = LocalWilsonLoopAction.wilson(coarse_beta_init, basis=config.basis).to(device)
 
     with torch.no_grad():
@@ -343,6 +377,21 @@ def train_learned_rg(
             bandwidth=config.mmd_bandwidth,
         )
 
+        test_distribution_metrics: dict[str, dict[str, float]] = {}
+        if test_configs is not None:
+            test_blocked = learnable_blocker(test_configs)
+            test_model, _, _ = _sample_model_ensemble(
+                coarse_action,
+                coarse_lattice_size=coarse_lattice_size,
+                config=config,
+            )
+            test_distribution_metrics = _compute_distribution_metrics(
+                test_blocked,
+                test_model,
+                measurement_names=config.evaluation_measurement_set,
+                bandwidth=config.mmd_bandwidth,
+            )
+
     if hasattr(learnable_blocker, "summary"):
         blocker_summary = learnable_blocker.summary()
     else:
@@ -359,5 +408,8 @@ def train_learned_rg(
         blocker_summary=blocker_summary,
         learned_action_coefficients=coarse_action.coefficient_dict(),
         final_distribution_metrics=final_distribution_metrics,
+        test_distribution_metrics=test_distribution_metrics,
         history=history,
+        final_blocked_ensemble=final_blocked.detach().cpu(),
+        final_model_ensemble=final_model.detach().cpu(),
     )
