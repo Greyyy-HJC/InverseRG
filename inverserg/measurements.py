@@ -1,4 +1,9 @@
 import torch
+import math
+
+import numpy as np
+from scipy.integrate import quad
+from scipy.special import i0, i1
 
 from .lattice import (
     mean_plaquette,
@@ -50,3 +55,34 @@ def measurement_samples(field: torch.Tensor, measurement_names: tuple[str, ...])
             raise ValueError(f"Unknown measurement: {measurement_name}")
         samples[measurement_name] = values.detach().cpu()
     return samples
+
+
+def plaquette_theory(beta: float) -> float:
+    """Exact mean plaquette for 2D compact U(1): I_1(beta) / I_0(beta)."""
+    return float(i1(beta) / i0(beta))
+
+
+def topological_susceptibility_theory(beta: float) -> float:
+    """Infinite-volume topological susceptibility for 2D U(1)."""
+    def numerator_integrand(phi):
+        return (phi / (2 * math.pi)) ** 2 * math.exp(beta * math.cos(phi))
+    def denominator_integrand(phi):
+        return math.exp(beta * math.cos(phi))
+    numerator, _ = quad(numerator_integrand, -math.pi, math.pi)
+    denominator, _ = quad(denominator_integrand, -math.pi, math.pi)
+    return numerator / denominator
+
+
+def autocorrelation_from_topo(
+    charges: np.ndarray, max_lag: int, beta: float, volume: int
+) -> np.ndarray:
+    """Topological charge autocorrelation using the susceptibility method."""
+    charges = np.round(charges).astype(int)
+    charges = charges - np.mean(charges)
+    chi_t_inf = topological_susceptibility_theory(beta)
+    autocorrelations = np.zeros(max_lag + 1)
+    autocorrelations[0] = 1.0
+    for delta in range(1, max_lag + 1):
+        topo_diff_squared = np.mean((charges[:-delta] - charges[delta:]) ** 2)
+        autocorrelations[delta] = 1 - topo_diff_squared / (2 * volume * chi_t_inf)
+    return autocorrelations

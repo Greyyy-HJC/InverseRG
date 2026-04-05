@@ -1,6 +1,17 @@
+from dataclasses import dataclass, field
+
 import torch
 
-from .lattice import regularize
+from .lattice import mean_plaquette, regularize, topological_charge
+
+
+@dataclass
+class HMCDiagnostics:
+    plaquette_history: list[float] = field(default_factory=list)
+    hamiltonian_history: list[float] = field(default_factory=list)
+    topological_charge_history: list[float] = field(default_factory=list)
+    acceptance_history: list[bool] = field(default_factory=list)
+    burn_in_length: int = 0
 
 
 class HMCU1Sampler:
@@ -79,3 +90,43 @@ class HMCU1Sampler:
 
         acceptance_rate = accepted / max(total, 1)
         return torch.stack(samples, dim=0), acceptance_rate, theta
+
+    def sample_with_diagnostics(
+        self,
+        n_samples: int,
+        burn_in: int = 64,
+        thin: int = 4,
+        initial_state: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, float, torch.Tensor, HMCDiagnostics]:
+        diagnostics = HMCDiagnostics()
+        diagnostics.burn_in_length = burn_in
+        theta = self.initialize() if initial_state is None else initial_state.clone().to(self.device)
+        accepted = 0
+        total = 0
+        samples = []
+
+        def record(theta_step: torch.Tensor, did_accept: bool) -> None:
+            with torch.no_grad():
+                diagnostics.plaquette_history.append(float(mean_plaquette(theta_step).detach().cpu()))
+                diagnostics.hamiltonian_history.append(float(self.action(theta_step).detach().cpu()))
+                diagnostics.topological_charge_history.append(
+                    float(topological_charge(theta_step).detach().cpu())
+                )
+                diagnostics.acceptance_history.append(did_accept)
+
+        for _ in range(burn_in):
+            theta, did_accept = self.metropolis_step(theta)
+            total += 1
+            accepted += int(did_accept)
+            record(theta, did_accept)
+
+        while len(samples) < n_samples:
+            for _ in range(thin):
+                theta, did_accept = self.metropolis_step(theta)
+                total += 1
+                accepted += int(did_accept)
+                record(theta, did_accept)
+            samples.append(theta.clone())
+
+        acceptance_rate = accepted / max(total, 1)
+        return torch.stack(samples, dim=0), acceptance_rate, theta, diagnostics

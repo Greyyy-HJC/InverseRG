@@ -14,7 +14,7 @@ The project has two linked goals:
   - apply the MCRG blocking map to obtain a blocked coarse ensemble
   - separately sample a coarse ensemble with the learned coarse action
   - compare measurement distributions across configurations between those two coarse ensembles
-- Therefore, future evaluation should treat per-measurement distributions as the primary object, with mean summaries used only as a first-pass proxy.
+- Therefore, evaluation should treat per-measurement distributions as the primary object, with mean summaries used only as a first-pass proxy.
 
 ## Baseline Physics Model
 - Fine degrees of freedom are link angles `theta[mu, x, y]` on a periodic 2D square lattice.
@@ -25,80 +25,78 @@ The project has two linked goals:
   - `S_c[Theta] = -beta_c * sum_P cos(Theta_P)`
 
 ## Blocking Model
+
+### Naive Blocking (current baseline)
 - Default blocking is `2x2`, so the coarse lattice spacing is doubled.
-- Coarse links must be built from gauge-covariant fine paths with the same endpoints.
-- A safe baseline construction is:
-  - enumerate a small local path family for each coarse-link direction
-  - compute the path holonomy for each candidate path
-  - combine paths with weights `w_p`
-  - project the weighted sum back to U(1)
-- The learned blocker should therefore operate over path families, not arbitrary link combinations, so gauge covariance is preserved by construction.
+- Coarse links are formed by summing the phases of two consecutive fine links along the same direction, then regularizing to `[-pi, pi]`:
+  - x-direction: `Theta_x(i,j) = regularize(theta_x(2i,2j) + theta_x(2i+1,2j))`
+  - y-direction: `Theta_y(i,j) = regularize(theta_y(2i,2j) + theta_y(2i,2j+1))`
+- This preserves gauge covariance because the sum of link phases along a path equals the phase of the product of link variables.
+
+### Gauge-Covariant Path Blocking (future)
+- Enumerate a small local path family for each coarse-link direction.
+- Compute the path holonomy for each candidate path.
+- Combine paths with learnable weights.
+- Project the weighted sum back to U(1).
+- The learned blocker operates over path families so gauge covariance is preserved by construction.
 
 ## Coarse Action Model
 - The coarse action should remain local.
-- Start with a small generalized Wilson basis:
-  - plaquette `1x1`
-  - rectangles `2x1` and `1x2`
-  - add larger loops only if there is a clear need
-- The action is parameterized by coefficients multiplying loop cosines.
+- Start with the pure Wilson plaquette action at `beta_c = beta_f / 4`.
+- Future: generalized Wilson basis with plaquette `1x1`, rectangles `2x1` and `1x2`, and larger loops only if needed.
 
 ## Coupling Baseline
-- Working hypothesis for 2D U(1): `beta_c ~= beta_f / 4` under `2x2` blocking.
-- This was accepted by @Greyyy on 2026-04-05 as the project baseline.
-- It is still a calibration target, not a proof, so the blocked-fine and coarse ensembles must be compared numerically before the coarse Wilson baseline is treated as validated.
+- Working hypothesis for 2D U(1): `beta_c = beta_f / 4` under `2x2` blocking.
+- This corresponds to doubling the lattice spacing (factor 2 blocking in 2D).
+- It is a calibration target, not a proof, so the blocked-fine and coarse ensembles must be compared numerically.
 
 ## Observable Targets
 At minimum, the project should track:
-- average plaquette
-- topological-charge statistic
-- at least one small Wilson loop beyond the plaquette
+- average plaquette (with exact reference `I1(beta)/I0(beta)`)
+- topological charge and susceptibility
+- small Wilson loops beyond the plaquette (1x2, 2x2)
+- rectangle observables (2x1, 1x2)
 
-Additional observables can be added later if the learned coarse model matches the baseline set but still misses relevant structure.
+## Project Phases
 
-For the current implementation stage:
-- Phase 2 runtime reporting uses summary measurements on coarse configurations:
-  - `plaquette`
-  - `topological_charge`
-  - `plaquette_angle_mean`
-  - `wilson_1x1`
-  - `wilson_1x2`
-  - `wilson_2x2`
-- Phase 3 training currently optimizes a smaller proxy basis:
-  - `plaquette`
-  - `rectangle_x`
-  - `rectangle_y`
+### Phase 0: Naive Pipeline (current)
+Validate the full pipeline without neural networks:
+1. HMC for fine 2D U(1) ensembles (L=32, beta=4.0, 1000 configs)
+2. Naive 2x2 blocking to produce coarse ensembles (L=16)
+3. Independent coarse HMC (L=16, beta=1.0, 1000 configs)
+4. Distribution-level comparison of blocked-fine vs coarse-HMC ensembles
+5. Presentation notebook with HMC diagnostics, blocking visualization, and ensemble comparison
 
-This means the present code is a valid first implementation pass, but not yet the final distribution-matching formulation.
+### Phase 1: Learned Blocking and Coarse Action
+- Learnable path-weight blocker (gauge-covariant path families)
+- Generalized local coarse action (plaquette + rectangles)
+- Training loop with MMD + contrastive loss
+- Compare against Phase 0 naive baseline
 
-## Project Stages
-1. Fine-theory HMC for 2D compact U(1).
-2. Measurement utilities and reproducible baseline runs.
-3. Fixed `2x2` gauge-covariant blocking.
-4. Coarse Wilson baseline with the working `beta_c` hypothesis.
-5. Learn blocking path weights with the coarse action fixed or lightly constrained.
-6. Jointly learn blocking weights and the local coarse action.
+### Phase 2: Scaling and Validation
+- Larger lattices and multiple beta values
+- Distributional agreement as primary success criterion
+- Systematic error analysis
 
 ## Current Module Targets
-The current implementation direction reported by @Builder uses a flat package layout:
-- `inverserg/hmc.py`
-- `inverserg/lattice.py`
-- `inverserg/measurements.py`
-- `inverserg/blocking.py`
-- `inverserg/actions.py`
-- `inverserg/baselines.py`
-- `inverserg/training.py`
-- `examples/fixed_coarse_baseline.py`
-- `examples/train_learned_rg.py`
+- `inverserg/hmc.py` -- HMC sampler with Omelyan integrator and diagnostics
+- `inverserg/lattice.py` -- geometric helpers for loops, topology, regularization
+- `inverserg/measurements.py` -- observable extraction and theoretical references
+- `inverserg/blocking.py` -- naive blocker and gauge-covariant path blockers
+- `inverserg/actions.py` -- local Wilson-loop coarse actions
+- `inverserg/baselines.py` -- tree-level coupling relations
+- `inverserg/diagnostics.py` -- KS tests, distribution plots, reports
+- `presentation.ipynb` -- human-facing progress presentation
 
 ## Acceptance Criteria
-- HMC runs with stable acceptance behavior and reasonable Hamiltonian conservation.
+- HMC runs with stable acceptance and reasonable Hamiltonian conservation.
 - Measurement utilities produce reproducible outputs across seeds.
-- Fixed blocking returns valid U(1) coarse links and preserves gauge covariance numerically.
-- Phase 2 includes an explicit blocked-fine vs coarse-baseline comparison for the working `beta_c` hypothesis.
-- The learned blocker and coarse action improve observable matching relative to the fixed baseline.
-- The next evaluation milestone is to compare measurement distributions across coarse configurations, not only summary means.
+- Naive blocking returns valid U(1) coarse links.
+- Distribution-level comparison of blocked-fine vs coarse-HMC ensembles is presented with KS tests.
+- The presentation notebook is self-contained and runnable.
 
-## Non-Goals For The First Pass
-- exhaustive loop bases
-- aggressive model complexity before the baseline is numerically stable
-- claiming a validated RG map before the coarse Wilson baseline has been checked
+## Non-Goals For Phase 0
+- Neural network training
+- Learned blocking weights
+- Aggressive model complexity
+- Claiming a validated RG map before the naive baseline is checked

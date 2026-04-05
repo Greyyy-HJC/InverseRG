@@ -1,4 +1,6 @@
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 import torch
 from torch import nn
@@ -41,6 +43,15 @@ class RGTrainingConfig:
     )
     mmd_bandwidth: float = 0.5
 
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def save_json(self, path: str | Path) -> Path:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), indent=2))
+        return path
+
 
 @dataclass
 class RGTrainingResult:
@@ -51,9 +62,19 @@ class RGTrainingResult:
     baseline_observables: dict[str, float]
     final_data_observables: dict[str, float]
     final_model_observables: dict[str, float]
-    learned_path_weights: dict[str, list[float]]
+    blocker_summary: dict
     learned_action_coefficients: dict[str, float]
+    final_distribution_metrics: dict[str, dict[str, float]] = field(default_factory=dict)
     history: list[dict[str, float]] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def save_json(self, path: str | Path) -> Path:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), indent=2))
+        return path
 
 
 def _set_seed(seed: int) -> None:
@@ -161,9 +182,47 @@ def _gaussian_mmd(data_features: torch.Tensor, model_features: torch.Tensor, ban
     )
 
 
+def _energy_distance_1d(x: torch.Tensor, y: torch.Tensor) -> float:
+    """One-dimensional energy distance between two sample vectors."""
+    if x.numel() == 0 or y.numel() == 0:
+        return 0.0
+    x = x.float().flatten()
+    y = y.float().flatten()
+    xy = torch.cdist(x.unsqueeze(-1), y.unsqueeze(-1), p=1).mean()
+    xx = torch.cdist(x.unsqueeze(-1), x.unsqueeze(-1), p=1).mean()
+    yy = torch.cdist(y.unsqueeze(-1), y.unsqueeze(-1), p=1).mean()
+    return float((2 * xy - xx - yy).cpu())
+
+
+def _compute_distribution_metrics(
+    blocked: torch.Tensor,
+    model: torch.Tensor,
+    measurement_names: tuple[str, ...],
+    bandwidth: float,
+) -> dict[str, dict[str, float]]:
+    """Per-observable distribution metrics between blocked-fine and model ensembles."""
+    metrics: dict[str, dict[str, float]] = {}
+    for name in measurement_names:
+        obs_mmd = float(measurement_distribution_mmd(
+            blocked, model, measurement_names=(name,), bandwidth=bandwidth,
+        ).cpu())
+        blocked_feat = _measurement_features(blocked, (name,)).squeeze(-1)
+        model_feat = _measurement_features(model, (name,)).squeeze(-1)
+        metrics[name] = {
+            "mmd": obs_mmd,
+            "energy_distance": _energy_distance_1d(blocked_feat, model_feat),
+            "blocked_mean": float(blocked_feat.mean()),
+            "model_mean": float(model_feat.mean()),
+            "blocked_std": float(blocked_feat.std()),
+            "model_std": float(model_feat.std()),
+        }
+    return metrics
+
+
 def train_learned_rg(
     fine_configs: torch.Tensor | None = None,
     config: RGTrainingConfig | None = None,
+    blocker: nn.Module | None = None,
 ) -> RGTrainingResult:
     config = config or RGTrainingConfig()
     _set_seed(config.seed)
@@ -178,7 +237,7 @@ def train_learned_rg(
     coarse_lattice_size = fine_configs.shape[-1] // 2
 
     fixed_blocker = FixedGaugeCovariantBlocker().to(device)
-    learnable_blocker = LearnableGaugeCovariantBlocker().to(device)
+    learnable_blocker = (blocker if blocker is not None else LearnableGaugeCovariantBlocker()).to(device)
     coarse_action = LocalWilsonLoopAction.wilson(coarse_beta_init, basis=config.basis).to(device)
 
     with torch.no_grad():
@@ -228,9 +287,12 @@ def train_learned_rg(
             bandwidth=config.mmd_bandwidth,
         )
         contrastive_loss = torch.dot(coarse_action.coefficients, model_obs.detach() - data_obs)
-        probs = learnable_blocker.path_probabilities()
-        # This negative-entropy term intentionally encourages sparse path selection.
-        sparsity_term = torch.sum(probs * torch.log(probs + 1e-8))
+
+        if hasattr(learnable_blocker, "regularization_loss"):
+            sparsity_term = learnable_blocker.regularization_loss()
+        else:
+            sparsity_term = torch.tensor(0.0, device=device)
+
         coefficient_penalty = coarse_action.coefficients[1:].square().sum()
         loss = (
             contrastive_loss
@@ -274,7 +336,17 @@ def train_learned_rg(
                 bandwidth=config.mmd_bandwidth,
             ).cpu()
         )
-        probs = learnable_blocker.path_probabilities().detach().cpu()
+        final_distribution_metrics = _compute_distribution_metrics(
+            final_blocked,
+            final_model,
+            measurement_names=config.evaluation_measurement_set,
+            bandwidth=config.mmd_bandwidth,
+        )
+
+    if hasattr(learnable_blocker, "summary"):
+        blocker_summary = learnable_blocker.summary()
+    else:
+        blocker_summary = {"type": type(learnable_blocker).__name__}
 
     return RGTrainingResult(
         baseline_mismatch=baseline_mismatch,
@@ -284,10 +356,8 @@ def train_learned_rg(
         baseline_observables=_observables_dict(config.basis, baseline_data_obs),
         final_data_observables=_observables_dict(config.basis, final_data_obs),
         final_model_observables=_observables_dict(config.basis, final_model_obs),
-        learned_path_weights={
-            "x_links": [float(x) for x in probs[0]],
-            "y_links": [float(x) for x in probs[1]],
-        },
+        blocker_summary=blocker_summary,
         learned_action_coefficients=coarse_action.coefficient_dict(),
+        final_distribution_metrics=final_distribution_metrics,
         history=history,
     )
