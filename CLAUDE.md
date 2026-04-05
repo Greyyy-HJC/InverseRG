@@ -29,7 +29,7 @@ Currently in Phase 0: naive pipeline without neural networks.
 ### Testing
 - `pytest tests/` for unit tests
 - Example scripts in `examples/` for integration-level checks
-- Presentation notebook `presentation.ipynb` for visual validation
+- Presentation notebooks in `presentation/` for visual validation
 
 ## File Layout
 ```
@@ -44,7 +44,8 @@ inverserg/
   training.py     -- learned RG training (Phase 1)
 examples/         -- runnable scripts
 tests/            -- pytest tests
-presentation.ipynb -- human-facing progress presentation
+presentation/     -- human-facing progress presentations (one notebook per phase)
+  phase0-naive-pipeline.ipynb -- Phase 0 naive pipeline presentation
 ```
 
 ## Virtual Environment
@@ -60,7 +61,7 @@ source .venv/bin/activate
 
 # Or invoke directly
 .venv/bin/python -m pytest tests/ -q
-.venv/bin/jupyter notebook presentation.ipynb
+.venv/bin/jupyter notebook presentation/phase0-naive-pipeline.ipynb
 ```
 
 The Jupyter kernel `inverserg` is registered for the notebook.
@@ -74,6 +75,6 @@ If you need to install additional packages:
 ```bash
 source .venv/bin/activate
 pip install -e .
-jupyter notebook presentation.ipynb
+jupyter notebook presentation/phase0-naive-pipeline.ipynb
 pytest tests/ -q
 ```

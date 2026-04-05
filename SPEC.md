@@ -86,7 +86,7 @@ Validate the full pipeline without neural networks:
 - `inverserg/actions.py` -- local Wilson-loop coarse actions
 - `inverserg/baselines.py` -- tree-level coupling relations
 - `inverserg/diagnostics.py` -- KS tests, distribution plots, reports
-- `presentation.ipynb` -- human-facing progress presentation
+- `presentation/phase0-naive-pipeline.ipynb` -- Phase 0 human-facing progress presentation
 
 ## Acceptance Criteria
 - HMC runs with stable acceptance and reasonable Hamiltonian conservation.

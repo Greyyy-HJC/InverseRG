@@ -16,16 +16,17 @@ A virtual environment is pre-configured at `.venv/` (Python 3.11) with all depen
 ```bash
 source .venv/bin/activate
 pip install -e .          # if not already installed
-jupyter notebook presentation.ipynb
+jupyter notebook presentation/phase0-naive-pipeline.ipynb
 ```
 
 Or without activating:
 
 ```bash
-.venv/bin/jupyter notebook presentation.ipynb
+.venv/bin/jupyter notebook presentation/phase0-naive-pipeline.ipynb
 ```
 
 The presentation notebook runs the full pipeline:
+
 - Fine ensemble: L=32, beta=4.0, 1000 configurations
 - Naive 2x2 blocking to L=16
 - Independent coarse ensemble: L=16, beta=1.0, 1000 configurations
@@ -38,4 +39,4 @@ Tree-level coarse coupling: `beta_c = beta_f / 4` for 2D U(1) with 2x2 blocking.
 
 ## Project Status
 
-See `presentation.ipynb` for the current visual summary. See `SPEC.md` for the full specification and phase plan.
+See `presentation/phase0-naive-pipeline.ipynb` for the current visual summary. See `SPEC.md` for the full specification and phase plan.

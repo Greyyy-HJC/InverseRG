@@ -26,7 +26,7 @@ This file defines how agents should collaborate on `InverseRG`.
 - HMC sampler with per-step diagnostics (plaquette, Hamiltonian, topological charge, acceptance)
 - Naive 2x2 blocker (sum two consecutive link phases + regularize)
 - Theoretical reference functions (exact plaquette, topological susceptibility, autocorrelation)
-- Presentation notebook (`presentation.ipynb`) with:
+- Presentation notebook (`presentation/phase0-naive-pipeline.ipynb`) with:
   - Fine HMC diagnostics (4-panel plot matching reference style)
   - Naive MCRG blocking explanation and visualization
   - Independent coarse HMC diagnostics
