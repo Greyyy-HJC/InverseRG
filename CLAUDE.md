@@ -49,8 +49,9 @@ inverserg/
 examples/         -- runnable scripts
 tests/            -- pytest tests
 presentation/     -- human-facing progress presentations (one notebook per phase)
-  phase0-naive-pipeline.ipynb  -- Phase 0 naive pipeline presentation
-  phase1-learned-blocking.ipynb -- Phase 1 learned blocking presentation
+  phase0-naive-pipeline.ipynb           -- Phase 0 naive pipeline presentation
+  phase1-learned-blocking-beta4.ipynb  -- Phase 1 learned blocking (beta=4.0)
+  phase1-learned-blocking-beta6.ipynb  -- Phase 1 learned blocking (beta=6.0)
 ```
 
 ## Virtual Environment

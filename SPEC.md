@@ -75,7 +75,9 @@ Validate the full pipeline without neural networks:
 - Train/test split for evaluation (configurable via `n_test_samples`)
 - Blocker type selection via `blocker_type` config: `"spatial"`, `"global"`, `"fixed"`
 - Compare against Phase 0 naive baseline
-- Presentation notebook: `presentation/phase1-learned-blocking.ipynb`
+- Lattice size: L=32→16 (matching Phase 0), 1000 configurations
+- Two coupling points: β=4.0→1.0 and β=6.0→1.5
+- Presentation notebooks: `phase1-learned-blocking-beta4.ipynb`, `phase1-learned-blocking-beta6.ipynb`
 
 ### Phase 2: Scaling and Validation
 - Larger lattices and multiple beta values
@@ -91,7 +93,8 @@ Validate the full pipeline without neural networks:
 - `inverserg/baselines.py` -- tree-level coupling relations
 - `inverserg/diagnostics.py` -- KS tests, distribution plots, reports
 - `presentation/phase0-naive-pipeline.ipynb` -- Phase 0 naive pipeline presentation
-- `presentation/phase1-learned-blocking.ipynb` -- Phase 1 learned blocking presentation
+- `presentation/phase1-learned-blocking-beta4.ipynb` -- Phase 1 learned blocking (β=4.0, L=32→16)
+- `presentation/phase1-learned-blocking-beta6.ipynb` -- Phase 1 learned blocking (β=6.0, L=32→16)
 
 ## Acceptance Criteria
 - HMC runs with stable acceptance and reasonable Hamiltonian conservation.
