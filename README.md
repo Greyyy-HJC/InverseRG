@@ -17,3 +17,5 @@ python examples/train_learned_rg.py
 The example runs a small smoke-test experiment and prints the observable mismatch before and after training.
 
 For the fixed Wilson coarse baseline, the current tree-level starting hypothesis is `beta_c ~= beta_f / 4` for 2D U(1) with 2x2 blocking. This is exposed as a helper in `inverserg.baselines.tree_level_coarse_beta`, but it should still be checked numerically against blocked-fine observables.
+
+For a human-facing summary of the current implementation, runtime settings, and observed results, see `docs/current-status-2026-04-05.md`.

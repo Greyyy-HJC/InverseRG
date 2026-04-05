@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Inverse renormalization-group experiments for 2D U(1) lattice gauge theory."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["torch>=2.2"]
+dependencies = ["matplotlib>=3.8", "torch>=2.2"]
 
 [tool.setuptools.packages.find]
 include = ["inverserg*"]

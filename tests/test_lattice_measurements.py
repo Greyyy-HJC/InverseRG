@@ -2,10 +2,12 @@ import math
 
 import torch
 
+from inverserg.diagnostics import analyze_distribution_consistency
 from inverserg.actions import LocalWilsonLoopAction
 from inverserg.hmc import HMCU1Sampler
 from inverserg.lattice import mean_plaquette, plaquette_angles, regularize, topological_charge, wilson_loop_angles
 from inverserg.measurements import summarize_observables
+from inverserg.training import RGTrainingConfig, measurement_distribution_mmd
 
 
 def test_regularize_wraps_to_principal_branch() -> None:
@@ -52,3 +54,33 @@ def test_hmc_sampler_returns_regularized_shapes_for_small_run() -> None:
     assert 0.0 <= acceptance_rate <= 1.0
     assert torch.all(samples <= math.pi)
     assert torch.all(samples >= -math.pi)
+
+
+def test_distribution_diagnostics_marks_identical_ensembles_consistent() -> None:
+    fields = torch.zeros((4, 2, 4, 4))
+    diagnostics, merged = analyze_distribution_consistency(
+        fields,
+        fields.clone(),
+        measurement_names=("plaquette", "topological_charge"),
+        ks_alpha=0.05,
+    )
+    assert set(merged) == {"blocked_plaquette", "blocked_topological_charge", "coarse_plaquette", "coarse_topological_charge"}
+    assert all(item.consistent for item in diagnostics)
+
+
+def test_distribution_mmd_vanishes_for_identical_measurement_samples() -> None:
+    fields = torch.zeros((4, 2, 4, 4))
+    config = RGTrainingConfig()
+    mmd = measurement_distribution_mmd(
+        fields,
+        fields.clone(),
+        measurement_names=config.measurement_set,
+        bandwidth=config.mmd_bandwidth,
+    )
+    assert torch.isclose(mmd, torch.tensor(0.0), atol=1e-6)
+
+
+def test_default_optimized_measurements_exclude_topological_charge() -> None:
+    config = RGTrainingConfig()
+    assert "topological_charge" not in config.measurement_set
+    assert "topological_charge" in config.evaluation_measurement_set

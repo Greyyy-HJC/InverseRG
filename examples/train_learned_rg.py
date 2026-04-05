@@ -17,6 +17,8 @@ def main() -> None:
     result = train_learned_rg(config=config)
     print("Baseline mismatch:", f"{result.baseline_mismatch:.6f}")
     print("Final mismatch:", f"{result.final_mismatch:.6f}")
+    print("Optimized measurement set:", result.measurement_names)
+    print("Evaluation measurement set:", result.evaluation_measurement_names)
     print("Learned blocking weights:", result.learned_path_weights)
     print("Learned coefficients:", result.learned_action_coefficients)
 

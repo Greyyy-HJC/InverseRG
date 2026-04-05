@@ -7,6 +7,7 @@ from .actions import LocalWilsonLoopAction
 from .baselines import tree_level_coarse_beta
 from .blocking import FixedGaugeCovariantBlocker, LearnableGaugeCovariantBlocker
 from .hmc import HMCU1Sampler
+from .lattice import plaquette_angles, rectangle_x_angles, rectangle_y_angles, topological_charge, wilson_loop_angles
 
 
 @dataclass
@@ -22,19 +23,31 @@ class RGTrainingConfig:
     hmc_step_size: float = 0.15
     epochs: int = 40
     learning_rate: float = 5e-2
-    blocker_loss_weight: float = 10.0
+    distribution_loss_weight: float = 10.0
+    mean_loss_weight: float = 2.0
     path_sparsity_weight: float = 1e-2
     coefficient_l2: float = 1e-3
     gradient_clip: float = 1.0
     device: str = "cpu"
     seed: int = 7
     basis: tuple[str, ...] = ("plaquette", "rectangle_x", "rectangle_y")
+    measurement_set: tuple[str, ...] = ("plaquette", "rectangle_x", "rectangle_y", "wilson_2x2")
+    evaluation_measurement_set: tuple[str, ...] = (
+        "plaquette",
+        "rectangle_x",
+        "rectangle_y",
+        "wilson_2x2",
+        "topological_charge",
+    )
+    mmd_bandwidth: float = 0.5
 
 
 @dataclass
 class RGTrainingResult:
     baseline_mismatch: float
     final_mismatch: float
+    measurement_names: tuple[str, ...]
+    evaluation_measurement_names: tuple[str, ...]
     baseline_observables: dict[str, float]
     final_data_observables: dict[str, float]
     final_model_observables: dict[str, float]
@@ -96,6 +109,58 @@ def _observable_mismatch(data_obs: torch.Tensor, model_obs: torch.Tensor) -> tor
     return torch.mean((data_obs - model_obs) ** 2)
 
 
+def _loop_mean_per_configuration(field: torch.Tensor, measurement_name: str) -> torch.Tensor:
+    if measurement_name == "plaquette":
+        angles = plaquette_angles(field)
+    elif measurement_name == "rectangle_x":
+        angles = rectangle_x_angles(field)
+    elif measurement_name == "rectangle_y":
+        angles = rectangle_y_angles(field)
+    elif measurement_name.startswith("wilson_"):
+        _, extents = measurement_name.split("_", maxsplit=1)
+        extent_x, extent_y = (int(value) for value in extents.split("x"))
+        angles = wilson_loop_angles(field, extent_x=extent_x, extent_y=extent_y)
+    else:
+        raise ValueError(f"Unknown loop measurement: {measurement_name}")
+    return torch.cos(angles).mean(dim=(-2, -1))
+
+
+def _measurement_features(field: torch.Tensor, measurement_names: tuple[str, ...]) -> torch.Tensor:
+    if field.dim() == 3:
+        field = field.unsqueeze(0)
+    features = []
+    for measurement_name in measurement_names:
+        if measurement_name == "topological_charge":
+            feature = topological_charge(field).float()
+        else:
+            feature = _loop_mean_per_configuration(field, measurement_name)
+        features.append(feature)
+    return torch.stack(features, dim=-1)
+
+
+def measurement_distribution_mmd(
+    blocked_field: torch.Tensor,
+    coarse_field: torch.Tensor,
+    measurement_names: tuple[str, ...],
+    bandwidth: float,
+) -> torch.Tensor:
+    blocked_features = _measurement_features(blocked_field, measurement_names)
+    coarse_features = _measurement_features(coarse_field, measurement_names)
+    return _gaussian_mmd(blocked_features, coarse_features, bandwidth=bandwidth)
+
+
+def _gaussian_mmd(data_features: torch.Tensor, model_features: torch.Tensor, bandwidth: float) -> torch.Tensor:
+    gamma = 1.0 / max(2.0 * bandwidth * bandwidth, 1e-8)
+    xx = torch.cdist(data_features, data_features).pow(2)
+    yy = torch.cdist(model_features, model_features).pow(2)
+    xy = torch.cdist(data_features, model_features).pow(2)
+    return (
+        torch.exp(-gamma * xx).mean()
+        + torch.exp(-gamma * yy).mean()
+        - 2.0 * torch.exp(-gamma * xy).mean()
+    )
+
+
 def train_learned_rg(
     fine_configs: torch.Tensor | None = None,
     config: RGTrainingConfig | None = None,
@@ -126,7 +191,14 @@ def train_learned_rg(
             config=config,
         )
         baseline_model_obs = coarse_action.observable_vector(baseline_model)
-        baseline_mismatch = float(_observable_mismatch(baseline_data_obs, baseline_model_obs).cpu())
+        baseline_mismatch = float(
+            measurement_distribution_mmd(
+                baseline_data,
+                baseline_model,
+                measurement_names=config.evaluation_measurement_set,
+                bandwidth=config.mmd_bandwidth,
+            ).cpu()
+        )
 
     optimizer = torch.optim.Adam(
         list(learnable_blocker.parameters()) + list(coarse_action.parameters()),
@@ -148,7 +220,13 @@ def train_learned_rg(
             )
             model_obs = coarse_action.observable_vector(model_samples)
 
-        mismatch = _observable_mismatch(data_obs, model_obs.detach())
+        mean_mismatch = _observable_mismatch(data_obs, model_obs.detach())
+        distribution_mismatch = measurement_distribution_mmd(
+            blocked,
+            model_samples.detach(),
+            measurement_names=config.measurement_set,
+            bandwidth=config.mmd_bandwidth,
+        )
         contrastive_loss = torch.dot(coarse_action.coefficients, model_obs.detach() - data_obs)
         probs = learnable_blocker.path_probabilities()
         # This negative-entropy term intentionally encourages sparse path selection.
@@ -156,7 +234,8 @@ def train_learned_rg(
         coefficient_penalty = coarse_action.coefficients[1:].square().sum()
         loss = (
             contrastive_loss
-            + config.blocker_loss_weight * mismatch
+            + config.distribution_loss_weight * distribution_mismatch
+            + config.mean_loss_weight * mean_mismatch
             + config.path_sparsity_weight * sparsity_term
             + config.coefficient_l2 * coefficient_penalty
         )
@@ -171,7 +250,8 @@ def train_learned_rg(
             {
                 "epoch": float(epoch),
                 "loss": float(loss.detach().cpu()),
-                "mismatch": float(mismatch.detach().cpu()),
+                "distribution_mismatch": float(distribution_mismatch.detach().cpu()),
+                "mean_mismatch": float(mean_mismatch.detach().cpu()),
                 "acceptance_rate": float(acceptance_rate),
             }
         )
@@ -186,12 +266,21 @@ def train_learned_rg(
             initial_state=model_state,
         )
         final_model_obs = coarse_action.observable_vector(final_model)
-        final_mismatch = float(_observable_mismatch(final_data_obs, final_model_obs).cpu())
+        final_mismatch = float(
+            measurement_distribution_mmd(
+                final_blocked,
+                final_model,
+                measurement_names=config.evaluation_measurement_set,
+                bandwidth=config.mmd_bandwidth,
+            ).cpu()
+        )
         probs = learnable_blocker.path_probabilities().detach().cpu()
 
     return RGTrainingResult(
         baseline_mismatch=baseline_mismatch,
         final_mismatch=final_mismatch,
+        measurement_names=config.measurement_set,
+        evaluation_measurement_names=config.evaluation_measurement_set,
         baseline_observables=_observables_dict(config.basis, baseline_data_obs),
         final_data_observables=_observables_dict(config.basis, final_data_obs),
         final_model_observables=_observables_dict(config.basis, final_model_obs),

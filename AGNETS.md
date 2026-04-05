@@ -20,6 +20,7 @@ This file defines how agents should collaborate on `InverseRG`.
 - Do not treat `beta_c ~= beta_f / 4` as a proof; treat it as the approved working baseline that still requires Phase 2 numerical validation.
 - Keep gauge covariance explicit in both code and documentation when defining blocked links.
 - Prefer small local Wilson-loop bases until there is evidence that a larger basis is necessary.
+- Treat distribution-level agreement of measurements across coarse configurations as the long-term target; mean-only matching is a staging proxy, not the final success criterion.
 
 ## Required Deliverables By Phase
 - Phase 1
@@ -45,6 +46,7 @@ This file defines how agents should collaborate on `InverseRG`.
 - `SPEC.md` is the scientific and architectural source of truth.
 - `README.md` should stay consistent with the actual import surface.
 - Example scripts should use defaults consistent with the current project baseline unless a deviation is intentionally being tested and is documented inline.
+- Status reports for humans should say exactly which lattice sizes, couplings, observables, and comparison criteria were actually run.
 
 ## Escalation
 - If a phase discovers that the current observable set is insufficient, raise that as a planning question instead of silently expanding scope.

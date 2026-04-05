@@ -7,6 +7,15 @@ The project has two linked goals:
 - simulate the fine theory with Hybrid Monte Carlo (HMC)
 - learn a gauge-covariant Monte Carlo renormalization group (MCRG) map and a local coarse effective action that reproduce fine-lattice measurements after blocking
 
+## Consistency Target
+- The target is not just to make a few ensemble means numerically close.
+- The intended notion of consistency is:
+  - start from a fine-lattice ensemble
+  - apply the MCRG blocking map to obtain a blocked coarse ensemble
+  - separately sample a coarse ensemble with the learned coarse action
+  - compare measurement distributions across configurations between those two coarse ensembles
+- Therefore, future evaluation should treat per-measurement distributions as the primary object, with mean summaries used only as a first-pass proxy.
+
 ## Baseline Physics Model
 - Fine degrees of freedom are link angles `theta[mu, x, y]` on a periodic 2D square lattice.
 - Fine link variables are `U_mu(x) = exp(i theta_mu(x))`.
@@ -46,6 +55,21 @@ At minimum, the project should track:
 
 Additional observables can be added later if the learned coarse model matches the baseline set but still misses relevant structure.
 
+For the current implementation stage:
+- Phase 2 runtime reporting uses summary measurements on coarse configurations:
+  - `plaquette`
+  - `topological_charge`
+  - `plaquette_angle_mean`
+  - `wilson_1x1`
+  - `wilson_1x2`
+  - `wilson_2x2`
+- Phase 3 training currently optimizes a smaller proxy basis:
+  - `plaquette`
+  - `rectangle_x`
+  - `rectangle_y`
+
+This means the present code is a valid first implementation pass, but not yet the final distribution-matching formulation.
+
 ## Project Stages
 1. Fine-theory HMC for 2D compact U(1).
 2. Measurement utilities and reproducible baseline runs.
@@ -72,6 +96,7 @@ The current implementation direction reported by @Builder uses a flat package la
 - Fixed blocking returns valid U(1) coarse links and preserves gauge covariance numerically.
 - Phase 2 includes an explicit blocked-fine vs coarse-baseline comparison for the working `beta_c` hypothesis.
 - The learned blocker and coarse action improve observable matching relative to the fixed baseline.
+- The next evaluation milestone is to compare measurement distributions across coarse configurations, not only summary means.
 
 ## Non-Goals For The First Pass
 - exhaustive loop bases
