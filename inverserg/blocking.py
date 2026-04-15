@@ -67,6 +67,26 @@ def _subsample_even_even(tensor: torch.Tensor) -> torch.Tensor:
     return tensor[..., 0::2, 0::2]
 
 
+def _batched_context(
+    context: torch.Tensor | None,
+    batch_size: int,
+    context_dim: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    if context is None:
+        return torch.zeros((batch_size, context_dim), device=device, dtype=dtype)
+    if context.dim() == 1:
+        context = context.unsqueeze(0)
+    if context.shape[-1] != context_dim:
+        raise ValueError(f"Expected context dim {context_dim}, got {tuple(context.shape)}")
+    if context.shape[0] == 1 and batch_size > 1:
+        context = context.expand(batch_size, -1)
+    if context.shape[0] != batch_size:
+        raise ValueError(f"Expected context batch {batch_size}, got {context.shape[0]}")
+    return context.to(device=device, dtype=dtype)
+
+
 def _x_paths(field: torch.Tensor) -> torch.Tensor:
     """All non-backtracking paths from (2i,2j) to (2i+2,2j) within |y|<=1.
 
@@ -256,6 +276,96 @@ class SpatialGaugeCovariantBlocker(nn.Module):
             "n_paths": self.N_PATHS,
             "hidden_dim": self.hidden_dim,
             "kernel_size": self.kernel_size,
+        }
+
+
+class ConditionedSpatialGaugeCovariantBlocker(nn.Module):
+    """Gauge-covariant blocker conditioned on a low-dimensional theory code."""
+
+    N_PATHS = 7
+    N_INPUT_FEATURES = 12
+
+    def __init__(
+        self,
+        hidden_dim: int = 32,
+        kernel_size: int = 3,
+        context_dim: int = 16,
+    ) -> None:
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.kernel_size = kernel_size
+        self.context_dim = context_dim
+        self._pad = (kernel_size - 1) // 2
+        self.conv1 = nn.Conv2d(self.N_INPUT_FEATURES, hidden_dim, kernel_size, padding=0)
+        self.conv2 = nn.Conv2d(hidden_dim, hidden_dim, 1)
+        self.conv_out = nn.Conv2d(hidden_dim, 2 * self.N_PATHS, 1)
+        self.film1 = nn.Linear(context_dim, 2 * hidden_dim)
+        self.film2 = nn.Linear(context_dim, 2 * hidden_dim)
+        self._init_conditioning()
+        self._init_output_bias()
+
+    def _init_conditioning(self) -> None:
+        nn.init.normal_(self.film1.weight, mean=0.0, std=2e-2)
+        nn.init.zeros_(self.film1.bias)
+        nn.init.normal_(self.film2.weight, mean=0.0, std=2e-2)
+        nn.init.zeros_(self.film2.bias)
+        nn.init.normal_(self.conv_out.weight, mean=0.0, std=2e-2)
+
+    def _init_output_bias(self) -> None:
+        with torch.no_grad():
+            self.conv_out.bias.zero_()
+            self.conv_out.bias[0] = 2.0
+            self.conv_out.bias[self.N_PATHS] = 2.0
+
+    def _apply_film(self, x: torch.Tensor, context: torch.Tensor, layer: nn.Linear) -> torch.Tensor:
+        gamma, beta = layer(context).chunk(2, dim=-1)
+        return x * (1.0 + gamma[:, :, None, None]) + beta[:, :, None, None]
+
+    def _predict_logits(
+        self,
+        features: torch.Tensor,
+        context: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        x = F.pad(features, [self._pad] * 4, mode="circular") if self._pad > 0 else features
+        x = self._apply_film(F.relu(self.conv1(x)), context, self.film1)
+        x = self._apply_film(F.relu(self.conv2(F.relu(x))), context, self.film2)
+        x = self.conv_out(F.relu(x))
+        return x[:, :self.N_PATHS], x[:, self.N_PATHS:]
+
+    def forward(self, fine_field: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
+        if fine_field.dim() == 3:
+            fine_field = fine_field.unsqueeze(0)
+        if fine_field.shape[-1] % 2 != 0 or fine_field.shape[-2] % 2 != 0:
+            raise ValueError("2x2 blocking requires even lattice dimensions.")
+        features = _block_gauge_invariant_features(fine_field)
+        context = _batched_context(
+            context,
+            batch_size=fine_field.shape[0],
+            context_dim=self.context_dim,
+            device=fine_field.device,
+            dtype=fine_field.dtype,
+        )
+        x_logits, y_logits = self._predict_logits(features, context)
+        x_weights = torch.softmax(x_logits, dim=1)
+        y_weights = torch.softmax(y_logits, dim=1)
+        coarse_x = _spatial_circular_average(_x_paths(fine_field), x_weights)
+        coarse_y = _spatial_circular_average(_y_paths(fine_field), y_weights)
+        return regularize(torch.stack([coarse_x, coarse_y], dim=1))
+
+    def regularization_loss(self) -> torch.Tensor:
+        loss = torch.tensor(0.0, device=self.conv1.weight.device)
+        for p in self.parameters():
+            loss = loss + p.square().sum()
+        return loss
+
+    def summary(self) -> dict:
+        return {
+            "type": "ConditionedSpatialGaugeCovariantBlocker",
+            "n_parameters": sum(p.numel() for p in self.parameters()),
+            "n_paths": self.N_PATHS,
+            "hidden_dim": self.hidden_dim,
+            "kernel_size": self.kernel_size,
+            "context_dim": self.context_dim,
         }
 
 

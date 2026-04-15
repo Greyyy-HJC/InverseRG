@@ -5,7 +5,7 @@ Project conventions for AI coding agents (Claude, Codex, etc.) working on Invers
 ## Project Overview
 
 2D compact U(1) lattice gauge theory with inverse renormalization group.
-Currently in Phase 2: RG monotone and multi-beta coupling flow.
+Currently in Phase 3: forward/inverse RG with a forward hypernetwork, conditioned blocker, and gauge-equivariant coarse-to-fine lifting.
 
 ## Key Conventions
 
@@ -37,6 +37,14 @@ Currently in Phase 2: RG monotone and multi-beta coupling flow.
 - 2D U(1) has no phase transition; all flows go toward strong coupling (beta -> 0)
 - `torchdiffeq` is an optional dependency (Euler suffices initially)
 
+### Forward/Inverse RG (Phase 3)
+
+- Forward RG hypernetwork: input fine coupling vector `J_f`, output coarse coupling vector `J_c` and blocker code `z_phi`
+- `ConditionedSpatialGaugeCovariantBlocker`: shared spatial blocker backbone modulated by `z_phi`
+- Inverse proposal net consumes coarse lattice gauge-invariant features, couplings, blocker code, and noise, then predicts gauge-invariant residual coefficients
+- Coarse-to-fine lift is constructed as canonical prolongation plus closed-loop residual modes
+- Equivariant refinement uses blocker-consistency and fine-action losses; strict gauge-equivariance should come from the construction, not just from training loss
+
 ### Code Style
 
 - No comments that merely narrate what code does
@@ -63,6 +71,8 @@ inverserg/
   diagnostics.py  -- KS tests, distribution plots
   training.py     -- learned RG training (Phase 1: train/test split, blocker_type config)
   monotone.py     -- RG monotone network, flow integration, multi-beta data collection (Phase 2)
+  forward_rg.py   -- forward RG hypernetwork and conditioned blocker training
+  inverse.py      -- gauge-equivariant inverse RG proposal and refinement
 examples/         -- runnable scripts
 tests/            -- pytest tests
 presentation/     -- human-facing progress presentations (one notebook per phase)
@@ -70,6 +80,7 @@ presentation/     -- human-facing progress presentations (one notebook per phase
   phase1-learned-blocking-beta4.ipynb   -- Phase 1 learned blocking (beta=4.0)
   phase1-learned-blocking-beta6.ipynb   -- Phase 1 learned blocking (beta=6.0)
   phase2-rg-monotone.ipynb              -- Phase 2 RG monotone and coupling flow
+  phase3-inverse-rg.ipynb               -- Phase 3 forward/inverse RG demo
 ```
 
 ## Virtual Environment

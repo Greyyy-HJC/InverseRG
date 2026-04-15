@@ -39,7 +39,7 @@ This file defines how agents should collaborate on `InverseRG`.
 - Comparison against Phase 0 naive baseline at beta=4.0 and beta=6.0
 - Presentation notebooks: `phase1-learned-blocking-beta4.ipynb`, `phase1-learned-blocking-beta6.ipynb`
 
-## Phase 2 Deliverables (current)
+## Phase 2 Deliverables (complete / summary path)
 
 - Multi-beta data collection: run Phase 1 training at a grid of beta values, collect `(J_fine, J_coarse_optimal)` pairs
 - RG monotone network in `inverserg/monotone.py`: MLP `C_theta: R^d -> R`
@@ -47,6 +47,15 @@ This file defines how agents should collaborate on `InverseRG`.
 - Validation: monotone-predicted `J_coarse` vs independently trained `J_coarse` across the beta grid
 - Validation: comparison with tree-level baseline `beta_c = beta_f / 4`
 - Presentation notebook: `presentation/phase2-rg-monotone.ipynb`
+
+## Phase 3 Deliverables (current)
+
+- Forward RG hypernetwork in `inverserg/forward_rg.py`: map `J_f -> (J_c, z_phi)`
+- Shared conditioned blocker in `inverserg/blocking.py`: `ConditionedSpatialGaugeCovariantBlocker`
+- Inverse RG module in `inverserg/inverse.py`: gauge-equivariant coarse-to-fine proposal + refinement
+- Validation: round-trip consistency `theta_c -> theta_f -> B_phi(theta_f)`
+- Validation: inverse-generated fine ensembles vs direct fine HMC ensembles
+- Presentation notebook: `presentation/phase3-inverse-rg.ipynb`
 
 ## Verification Expectations
 

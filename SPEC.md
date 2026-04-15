@@ -4,6 +4,7 @@
 
 - Simulate 2D compact U(1) lattice gauge theory with HMC
 - Learn a gauge-covariant MCRG blocking map and local coarse effective action that reproduce fine-lattice measurement distributions after blocking
+- Learn a coarse-to-fine inverse RG transformation that lifts coarse configurations back to fine lattices while preserving gauge covariance and fine-theory consistency
 
 ## Consistency Target
 
@@ -40,7 +41,8 @@
 |-------|--------|-------|
 | 0 | complete | Naive pipeline: HMC, naive blocking, baseline comparison |
 | 1 | complete | Learned blocking: 7-path CNN blocker, Wilson-loop coarse action, MMD+contrastive training |
-| 2 | current | RG monotone: multi-beta coupling flow C(J), beta function |
+| 2 | complete | RG monotone: multi-beta coupling flow C(J), beta function |
+| 3 | current | Forward/inverse RG: `J_f -> (J_c, z_phi)` and coarse-to-fine lifting |
 
 ## Phase 2 Constraints
 
@@ -54,6 +56,26 @@
 - Validation: predicted `J_coarse` vs tree-level baseline and vs Stage 1 collected pairs
 - 2D compact U(1) has no phase transition; monotone should decrease monotonically along the flow direction
 
+## Phase 3 Constraints
+
+- Scope: single-step `2x2` inverse lift only
+- Fine theory: Wilson-only in v1, but the coupling interface stays `J = (beta_plaq, beta_rect_x, beta_rect_y)`
+- Forward RG must be a continuous model over coupling space:
+  - input `J_f`
+  - output coarse couplings `J_c`
+  - output blocker conditioning code `z_phi`
+- Blocker must be a shared gauge-covariant spatial backbone conditioned by `z_phi`, not a separate per-beta artifact bank
+- Inverse RG must be stochastic: input `(theta_c, J_c, J_f, z_phi, noise)` and output `theta_f`
+- Inverse proposal must be strictly gauge-equivariant by construction
+- The coarse-to-fine lift must factor into:
+  1. gauge-covariant canonical prolongation
+  2. gauge-invariant closed-loop residual modes
+  3. equivariant refinement with blocker-consistency and fine-action terms
+- Round-trip consistency target:
+  - block generated `theta_f` with the frozen forward blocker
+  - recover the input coarse configuration and its coarse observable distributions
+- The monotone is optional in Phase 3 and is not the primary inverse-RG training path
+
 ## Acceptance Criteria
 
 - HMC runs with stable acceptance and reasonable Hamiltonian conservation
@@ -62,3 +84,7 @@
 - Distribution-level comparison presented with KS tests, MMD, energy distance
 - Presentation notebooks are self-contained and runnable
 - Phase 2: monotone-predicted `J_coarse` agrees with independently trained `J_coarse` across the beta grid
+- Phase 3:
+  - forward RG predicts stable `(J_c, z_phi)` across the Wilson beta grid
+  - inverse RG generates fine configurations whose blocked images match the input coarse configurations
+  - inverse-generated fine ensembles move toward direct fine HMC ensembles in distributional metrics
